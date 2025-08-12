@@ -1,0 +1,12 @@
+# In .gitignore file
+
+# Ignore the virtual environment
+venv/
+
+# Ignore Python cache files
+__pycache__/
+*.pyc
+
+# --- IMPORTANT ---
+# Ignore the environment file containing secrets
+.env

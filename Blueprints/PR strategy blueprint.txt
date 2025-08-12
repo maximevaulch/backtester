@@ -1,0 +1,18 @@
+Strategy Blueprint: Price Reach (strategy_PR)
+Document Purpose: This document defines the entry and stop loss logic for the "Price Reach" trading strategy.
+Part 1: Core Definitions
+Timeframe: 15-minute candles.
+Timezone: America/New_York for all session timings.
+Session Filter: The strategy is only active during a user-defined time window (e.g., 08:00 to 12:00). If no window is provided, it is active 24h.
+Part 2: Entry Logic (Signal Candle Conditions)
+A signal is generated if a single 15-minute candle meets ALL THREE of the following conditions:
+Pattern Condition: The candle's high is greater than or equal to (>=) the previous candle's high, AND its low is less than or equal to (<=) the previous candle's low.
+Volume Condition: The volume of the candle is strictly greater than (>) the volume of the previous candle.
+Body Condition: The close of the candle is NOT strictly between the previous candle's open and close.
+A LONG Signal is generated if the valid signal candle is bullish (close > open).
+A SHORT Signal is generated if the valid signal candle is bearish (close < open).
+Part 3: Stop Loss Logic
+The Stop Loss is defined by the structure of the signal candle itself.
+Entry Price: The close of the valid signal candle.
+Stop Loss Price (for a LONG trade): The low of the valid signal candle.
+Stop Loss Price (for a SHORT trade): The high of the valid signal candle.

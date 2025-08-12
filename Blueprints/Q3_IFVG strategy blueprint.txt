@@ -1,0 +1,34 @@
+Strategy Blueprint: Killzone Sweep + iFVG (strategy_q3_ifvg)
+Document Purpose: This document defines the entry and stop loss logic for the "Killzone Sweep + iFVG" trading strategy.
+Part 1: Core Definitions
+Timeframe: 1-minute candles.
+Timezone: America/New_York for all session timings.
+Sweep: A state triggered when a candle's high/low strictly breaches a Killzone level.
+iFVG (Inverted Fair Value Gap): A two-step process:
+A) Candidate FVG Creation: A standard 3-candle Fair Value Gap (low > high[2] for Bullish, high < low[2] for Bearish) is identified.
+B) Inversion: A subsequent candle closes back through the candidate FVG, confirming the iFVG.
+Part 2: Daily Trading Algorithm (Two Independent Sessions)
+Session 1: KZ1 / TZ1
+1.1 Define KZ1 Range: The absolute high (KZ1_High) and low (KZ1_Low) are recorded between 01:30:00 and 02:14:59.
+1.2 Buffer: The 02:15 candle is ignored.
+1.3 Invalidation Check: At 02:16:00, if the open price is already outside the KZ1 range, the setup for that direction is invalidated for the day.
+1.4 Execute Logic: From 02:16:00 to 02:38:59, the system checks for an entry trigger.
+Session 2: KZ2 / TZ2
+2.1 Define KZ2 Range: The KZ2_High and KZ2_Low are recorded between 03:00:00 and 03:44:59.
+2.2 Buffer: The 03:45 candle is ignored.
+2.3 Invalidation Check: At 03:46:00, if the open is outside the KZ2 range, the setup for that direction is invalidated.
+2.4 Execute Logic: From 03:46:00 to 04:08:59, the system checks for an entry trigger.
+Part 3: Entry & Stop Loss Logic
+An entry signal is generated on a candle's close if all conditions in the checklist are met.
+Checklist for a LONG Entry:
+Setup Valid: The long setup for the relevant session was not invalidated at the start of its Trading Zone.
+Low Sweep Occurred: A low < the relevant Killzone Low has occurred.
+iFVG Confirmed: A candidate Bearish FVG was formed, and the current candle's close is now > the top of that FVG.
+Entry Price: The close of the confirming candle.
+Stop Loss Price: The absolute lowest low of all candles from the start of the 3-candle FVG pattern up to and including the entry candle.
+Checklist for a SHORT Entry:
+Setup Valid: The short setup for the relevant session was not invalidated.
+High Sweep Occurred: A high > the relevant Killzone High has occurred.
+iFVG Confirmed: A candidate Bullish FVG was formed, and the current candle's close is now < the bottom of that FVG.
+Entry Price: The close of the confirming candle.
+Stop Loss Price: The absolute highest high of all candles from the start of the 3-candle FVG pattern up to and including the entry candle
