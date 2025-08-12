@@ -3,6 +3,10 @@
 # Ignore the virtual environment
 venv/
 
+# Ignore folders
+Data/
+Results/
+
 # Ignore Python cache files
 __pycache__/
 *.pyc
