@@ -49,7 +49,7 @@ class DownloaderUI(tk.Toplevel):
         controls_frame = ttk.Frame(self.new_download_frame)
         controls_frame.pack(fill="x", pady=(0, 10))
 
-        self.instruments = ["EUR_USD", "GBP_USD", "XAU_USD", "USD_JPY", "AUD_USD"]
+        self.instruments = ["EUR_USD", "GBP_USD", "XAU_USD", "USD_JPY", "AUD_USD", "EUR_GBP"]
         ttk.Label(controls_frame, text="Instrument:").grid(row=0, column=0, padx=5, pady=5, sticky='w')
         self.instrument_var = tk.StringVar(value=self.instruments[0])
         self.instrument_dropdown = ttk.Combobox(controls_frame, textvariable=self.instrument_var, values=self.instruments, state="readonly")
