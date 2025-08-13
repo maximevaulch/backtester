@@ -1,0 +1,17 @@
+{
+  "EUR_USD": {
+    "base_tf": "30s"
+  },
+  "GBP_USD": {
+    "base_tf": "30s"
+  },
+  "XAU_USD": {
+    "base_tf": "30s"
+  },
+  "USD_JPY": {
+    "base_tf": "30s"
+  },
+  "USD_CAD": {
+    "base_tf": "30s"
+  }
+}

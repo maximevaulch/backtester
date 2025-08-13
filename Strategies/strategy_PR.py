@@ -55,5 +55,37 @@ def generate_conditions(df: pd.DataFrame, strategy_params: dict = {}) -> pd.Data
     conditions_df['entry_price'] = df_15min[open_col]
     conditions_df['sl_price_long'] = df_15min[low_col].shift(1)
     conditions_df['sl_price_short'] = df_15min[high_col].shift(1)
+
+    # --- Session Condition ---
+    session_start_str = strategy_params.get('session_start_str')
+    session_end_str = strategy_params.get('session_end_str')
+
+    if 'ny_time' not in df_15min.columns:
+        df_15min['ny_time'] = df_15min.index.tz_convert('America/New_York')
+
+    if session_start_str and session_end_str:
+        start_time = time.fromisoformat(session_start_str)
+        end_time = time.fromisoformat(session_end_str)
+
+        df_15min_ny_time = df_15min['ny_time'].dt.time
+
+        if start_time > end_time: # Overnight session
+            session_mask = (df_15min_ny_time >= start_time) | (df_15min_ny_time <= end_time)
+        else:
+            session_mask = (df_15min_ny_time >= start_time) & (df_15min_ny_time <= end_time)
+
+        conditions_df['session_cond'] = session_mask
+        print(f"Applied session filter: {start_time.strftime('%H:%M:%S')} - {end_time.strftime('%H:%M:%S')}")
+    else:
+        conditions_df['session_cond'] = True
+        print("No session filter applied, running on all data.")
+
+    final_df = conditions_df.reindex(df.index, method='ffill')
     
-    return conditions_df.reindex(df.index, method='ffill').fillna(False)
+    # Ensure boolean columns are filled with False, not True, after ffill
+    bool_cols = ['base_pattern_cond', 'filter_Volume', 'filter_Body', 'is_bullish', 'is_bearish', 'session_cond']
+    for col in bool_cols:
+        if col in final_df.columns:
+            final_df[col] = final_df[col].fillna(False)
+
+    return final_df

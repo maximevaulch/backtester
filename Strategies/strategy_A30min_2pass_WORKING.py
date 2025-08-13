@@ -2,6 +2,7 @@
 import pandas as pd
 import numpy as np
 import os
+from datetime import time
 
 # --- STRATEGY METADATA ---
 STRATEGY_TIMEFRAME = '30min' # The timeframe for analysis and zone identification
@@ -141,4 +142,25 @@ def generate_conditions(df: pd.DataFrame, strategy_params: dict = {}) -> pd.Data
                 break
                 
     print(f"Phase 2 complete. Generated {conditions_df['base_pattern_cond'].sum()} trade signals.")
+
+    # --- Session Condition ---
+    session_start_str = strategy_params.get('session_start_str')
+    session_end_str = strategy_params.get('session_end_str')
+
+    if session_start_str and session_end_str:
+        start_time = time.fromisoformat(session_start_str)
+        end_time = time.fromisoformat(session_end_str)
+
+        df_ny_time = df['ny_time'].dt.time
+
+        if start_time > end_time: # Overnight session
+            conditions_df['session_cond'] = (df_ny_time >= start_time) | (df_ny_time <= end_time)
+        else:
+            conditions_df['session_cond'] = (df_ny_time >= start_time) & (df_ny_time <= end_time)
+
+        print(f"Applied session filter: {start_time.strftime('%H:%M:%S')} - {end_time.strftime('%H:%M:%S')}")
+    else:
+        conditions_df['session_cond'] = True
+        print("No session filter applied, running on all data.")
+
     return conditions_df

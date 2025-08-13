@@ -5,6 +5,7 @@ import os
 import sys
 from itertools import chain, combinations
 from datetime import time
+import json
 
 def get_project_root():
     """Gets the project root, handling both script and frozen exe."""
@@ -21,13 +22,20 @@ from Core.data_handler import load_unified_data
 from Core.backtester import run_r_backtest
 from Core.analysis import get_performance_stats, export_scenario_to_excel
 
-ASSET_CONFIG = {
-    'EUR_USD': {'base_tf': '30s'},
-    'GBP_USD': {'base_tf': '30s'},
-    'XAU_USD': {'base_tf': '30s'},
-    'USD_JPY': {'base_tf': '30s'},
-    'USD_CAD': {'base_tf': '30s'},
-}
+def load_asset_config():
+    """Loads asset configuration from the JSON file."""
+    config_path = os.path.join(project_root, 'config', 'asset_config.json')
+    try:
+        with open(config_path, 'r') as f:
+            return json.load(f)
+    except FileNotFoundError:
+        print(f"ERROR: Asset configuration file not found at {config_path}")
+        return {}
+    except json.JSONDecodeError:
+        print(f"ERROR: Could not decode asset configuration file at {config_path}")
+        return {}
+
+ASSET_CONFIG = load_asset_config()
 
 def get_unique_filename(path):
     if not os.path.exists(path): return path
@@ -83,7 +91,7 @@ def run_full_backtest(asset_name, ny_start_date, ny_end_date, rr_scenarios,
         final_mask = conditions_df['base_pattern_cond']
         if 'session_cond' in conditions_df.columns:
             final_mask &= conditions_df['session_cond']
-            log("   - Applying strategy's internal (Fixed) session rules.")
+            log("   - Applying strategy-defined session rules.")
         if not filt_combo:
             combo_name = "Base"
         else:
@@ -119,34 +127,13 @@ def run_full_backtest(asset_name, ny_start_date, ny_end_date, rr_scenarios,
             scenario_name = f"{combo_name}_{rr_scenario['rr']:.1f}R" + ("_BE" if rr_scenario['use_be'] else "")
             log(f"  - Simulating: {scenario_name}")
             
-            all_trades_df = run_r_backtest(backtest_df, 
+            trades_df = run_r_backtest(backtest_df,
                                        risk_reward_ratio=rr_scenario['rr'],
                                        use_breakeven=rr_scenario['use_be'],
                                        breakeven_trigger_r=rr_scenario['be_trigger_r'],
                                        execution_timeframe=execution_timeframe,
                                        allow_multiple_trades=allow_multiple_trades,
                                        status_callback=status_callback)
-            
-            session_start_str = strategy_params.get('session_start_str')
-            session_end_str = strategy_params.get('session_end_str')
-            
-            if session_start_str and session_end_str and not all_trades_df.empty:
-                start_time = time.fromisoformat(session_start_str)
-                end_time = time.fromisoformat(session_end_str)
-
-                def is_in_session(timestamp):
-                    ny_time = timestamp.tz_convert('America/New_York').time()
-                    if start_time > end_time:
-                        return ny_time >= start_time or ny_time <= end_time
-                    else:
-                        return start_time <= ny_time <= end_time
-                
-                session_mask = all_trades_df['Entry Time'].apply(is_in_session)
-                trades_df = all_trades_df[session_mask].copy()
-
-                log(f"    -> Filtered for session: Found {len(trades_df)} trades out of {len(all_trades_df)} total potential trades.")
-            else:
-                trades_df = all_trades_df
             
             overall, monthly, daily = get_performance_stats(trades_df)
             all_scenario_results[scenario_name] = {'trades': trades_df, 'overall': overall, 'monthly': monthly, 'daily': daily}
