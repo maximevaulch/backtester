@@ -24,6 +24,11 @@ from Core.oanda_downloader import run_download, analyze_raw_data
 from Core.updater import run_full_update
 
 class DownloaderUI(tk.Toplevel):
+    """
+    The UI window for the Data Manager, which handles two main modes:
+    1. New Download: For downloading a fresh, complete dataset for a single instrument.
+    2. Update All: For running the full update pipeline on all existing datasets.
+    """
     # ... (The rest of this file is now correct and doesn't need changes) ...
     def __init__(self, master=None):
         super().__init__(master)

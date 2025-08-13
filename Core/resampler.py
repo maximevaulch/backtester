@@ -2,12 +2,26 @@
 import pandas as pd
 import os
 import re
+from typing import Optional, Tuple, Dict, Any
 
-def run_resampling(healed_file_path, status_callback=None):
+def run_resampling(healed_file_path: str, status_callback: Optional[callable] = None) -> Tuple[bool, Dict[str, Any]]:
     """
-    Loads a healed file and resamples it, reporting progress via a callback.
+    Loads a 'healed' data file and resamples it to multiple higher timeframes.
+
+    It reads a single Parquet file containing a continuous time series, then
+    generates a separate Parquet file for each target timeframe (e.g., 1min,
+    5min, 1H, 4H, etc.) in a new '_resampled' directory.
+
+    Args:
+        healed_file_path: The full path to the healed Parquet file.
+        status_callback: An optional function for logging progress.
+
+    Returns:
+        A tuple containing:
+        - bool: True if successful, False otherwise.
+        - Dict[str, Any]: A report dictionary containing results or an error message.
     """
-    def log(message):
+    def log(message: str):
         if status_callback: status_callback(message)
         else: print(message)
 
@@ -21,8 +35,10 @@ def run_resampling(healed_file_path, status_callback=None):
             log("!!! Healed file is empty. Cannot resample. !!!")
             return False, {"Error": "Healed file is empty."}
 
+        # Define the aggregation rules for resampling OHLCV data.
         agg_rules = { 'open': 'first', 'high': 'max', 'low': 'min', 'close': 'last', 'volume': 'sum' }
 
+        # Extract the base asset name (e.g., 'EUR_USD') from the healed filename.
         filename = os.path.basename(healed_file_path)
         match = re.match(r"^(.*?)_[SM]\d+_healed\.parquet$", filename)
         if not match:

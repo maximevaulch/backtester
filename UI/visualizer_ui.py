@@ -28,6 +28,9 @@ if project_root not in sys.path:
 from Core.data_handler import load_unified_data
 from Core.backtester import run_r_backtest
 from Core.visualizer import plot_day_summary, open_file
+from Core.strategy_base import BaseStrategy
+import inspect
+from typing import Optional, List
 
 ASSET_CONFIG = {
     'EUR_USD': {'base_tf': '30s'},
@@ -49,7 +52,13 @@ def get_available_assets():
     return sorted(available_assets)
 
 class VisualizerUI(tk.Toplevel):
-    def __init__(self, master=None):
+    """
+    The UI window for the Strategy Visualizer. This tool runs a single-day
+    backtest for a selected strategy and generates an interactive Plotly chart
+    to visualize the price action and trades.
+    """
+    def __init__(self, master: Optional[tk.Tk] = None):
+        """Initializes the VisualizerUI window and its components."""
         super().__init__(master)
         self.master_app = master
         self.title("Strategy Visualizer")
@@ -131,46 +140,72 @@ class VisualizerUI(tk.Toplevel):
         self.strategy_dropdown['values'] = sorted(strats)
         if strats and not self.strategy_var.get(): self.strategy_dropdown.current(0)
 
-    def run_backtest_logic(self, params):
+    def get_strategy_instance(self, module_path: str) -> Optional[BaseStrategy]:
+        """Dynamically loads a strategy module and returns an instance of the strategy class."""
+        if not module_path:
+            return None
+        try:
+            module = importlib.import_module(module_path)
+            importlib.reload(module)
+            for name, obj in inspect.getmembers(module):
+                if inspect.isclass(obj) and issubclass(obj, BaseStrategy) and obj is not BaseStrategy:
+                    return obj()
+        except (ImportError, AttributeError) as e:
+            print(f"Could not get strategy instance from {module_path}: {e}")
+        return None
+
+    def run_backtest_logic(self, params: tuple):
+        """
+        The core logic for the visualizer, run in a separate thread.
+        It loads data, runs a one-day backtest, and generates a plot.
+        """
         log_callback = lambda msg: self.update_log(msg)
         try:
             asset_name, strategy_path, date_obj, rr, use_be, verbose_mode = params
-            target_date = date_obj 
+            target_date = date_obj
             log_callback(f"\n--- Visualizing {strategy_path} for {asset_name} on {target_date} ---")
 
+            # Load data and strategy
             full_unified_df = load_unified_data(asset_name)
             if full_unified_df.empty: raise ValueError("Unified data file not found or is empty.")
             
+            strategy_instance = self.get_strategy_instance(strategy_path)
+            if not strategy_instance: raise ValueError(f"Could not load strategy from {strategy_path}")
+
+            # Filter data for the target day
             full_unified_df['ny_time'] = full_unified_df.index.tz_convert('America/New_York')
             day_data_df = full_unified_df[full_unified_df['ny_time'].dt.date == target_date].copy()
             if day_data_df.empty: raise ValueError(f"No data found for {target_date} in the unified file.")
             
-            module = importlib.import_module(strategy_path)
-            condition_calculator = getattr(module, 'generate_conditions')
-            signal_tf = getattr(module, 'STRATEGY_TIMEFRAME')
+            # Generate signals
+            conditions_df = strategy_instance.generate_conditions(day_data_df.copy(), strategy_params={})
+            signal_tf = strategy_instance.STRATEGY_TIMEFRAME
             
-            conditions_df = condition_calculator(day_data_df.copy(), strategy_params={})
-            
+            # Combine signals
             final_mask = conditions_df['base_pattern_cond']
             if 'session_cond' in conditions_df.columns:
                 final_mask &= conditions_df['session_cond']
-                
-            open_col = f'open_{signal_tf}'; is_new_candle_start = day_data_df[open_col].ne(day_data_df[open_col].shift(1))
+            open_col = f'open_{signal_tf}'
+            is_new_candle_start = day_data_df[open_col].ne(day_data_df[open_col].shift(1))
             final_mask &= is_new_candle_start
             
             long_signal_mask = final_mask & conditions_df['is_bullish']
             short_signal_mask = final_mask & conditions_df['is_bearish']
 
             signals_df = pd.DataFrame(index=day_data_df.index)
-            signals_df['signal'] = 0; signals_df.loc[long_signal_mask, 'signal'] = 1; signals_df.loc[short_signal_mask, 'signal'] = -1
+            signals_df['signal'] = np.where(long_signal_mask, 1, np.where(short_signal_mask, -1, 0))
             signals_df['entry_price'] = np.where(long_signal_mask, conditions_df['entry_price'], np.where(short_signal_mask, conditions_df['entry_price'], np.nan))
             signals_df['sl_price'] = np.where(long_signal_mask, conditions_df['sl_price_long'], np.where(short_signal_mask, conditions_df['sl_price_short'], np.nan))
 
-            day_data_df['signal'] = signals_df['signal']; day_data_df['entry_price'] = signals_df['entry_price']; day_data_df['sl_price'] = signals_df['sl_price']
+            day_data_df['signal'] = signals_df['signal']
+            day_data_df['entry_price'] = signals_df['entry_price']
+            day_data_df['sl_price'] = signals_df['sl_price']
             
+            # Run a one-day backtest
             execution_timeframe = ASSET_CONFIG[asset_name]['base_tf']
             trades_df = run_r_backtest(day_data_df, rr, use_be, rr / 2.0, execution_timeframe, allow_multiple_trades=True, status_callback=log_callback)
             
+            # Prepare data for plotting
             log_callback("Preparing data for visualization...")
             plot_cols = [f'open_{signal_tf}', f'high_{signal_tf}', f'low_{signal_tf}', f'close_{signal_tf}', f'volume_{signal_tf}']
             if not all(col in day_data_df.columns for col in plot_cols):

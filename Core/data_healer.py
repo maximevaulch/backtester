@@ -2,14 +2,62 @@
 import pandas as pd
 import os
 import numpy as np
+from typing import Optional, Tuple
 from .data_handler import load_all_asset_data
 
-def run_healing(raw_folder_path, status_callback=None):
+def _create_master_index(df: pd.DataFrame, log: callable) -> Optional[pd.DatetimeIndex]:
+    """Infers frequency and creates a complete DatetimeIndex."""
+    if len(df) < 2:
+        log("!!! Not enough data to determine frequency. Aborting. !!!")
+        return None
+    inferred_freq = df.index.to_series().diff().mode()[0]
+    log(f"-> Inferred base frequency: {inferred_freq}")
+    log(f"-> Creating a complete timeline from {df.index.min()} to {df.index.max()}...")
+    return pd.date_range(start=df.index.min(), end=df.index.max(), freq=inferred_freq, tz='UTC')
+
+def _fill_data_gaps(df: pd.DataFrame, log: callable) -> pd.DataFrame:
+    """Fills missing price data with forward-fill and volume with 0."""
+    log("-> Healing small data gaps (forward-fill)...")
+    price_cols = ['open', 'high', 'low', 'close']
+    df[price_cols] = df[price_cols].ffill()
+    df['volume'] = df['volume'].fillna(0)
+    return df
+
+def _remove_weekend_data(df: pd.DataFrame, log: callable) -> pd.DataFrame:
+    """Removes artificially generated data that falls on weekends or market close times."""
+    log("-> Removing ARTIFICIAL data from weekend/market-close gaps...")
+    is_artificial = ~df['is_original']
+    is_saturday = df.index.dayofweek == 5
+    is_sunday_before_open = (df.index.dayofweek == 6) & (df.index.hour < 21)
+    is_friday_after_close = (df.index.dayofweek == 4) & (df.index.hour >= 21)
+    rows_to_remove = is_artificial & (is_saturday | is_sunday_before_open | is_friday_after_close)
+    return df[~rows_to_remove]
+
+def run_healing(raw_folder_path: str, status_callback: Optional[callable] = None) -> Tuple[bool, Optional[str], int, int]:
     """
-    Loads raw data, fills gaps, and saves a single 'healed' file,
-    reporting progress via a callback.
+    Loads raw data, fills gaps to create a continuous timeline, and saves a single 'healed' file.
+
+    The process involves:
+    1. Loading all raw data for an asset.
+    2. Inferring the data's time frequency (e.g., 1 minute).
+    3. Creating a master index with no time gaps.
+    4. Reindexing the data to this master index, creating NaN rows for gaps.
+    5. Filling price data with forward-fill and volume with 0.
+    6. Removing artificial data generated during non-market hours (weekends).
+    7. Saving the final, cleaned DataFrame to a single Parquet file.
+
+    Args:
+        raw_folder_path: The full path to the folder containing the raw data files.
+        status_callback: An optional function for logging progress.
+
+    Returns:
+        A tuple containing:
+        - bool: True if successful, False otherwise.
+        - Optional[str]: The path to the saved healed file, or None on failure.
+        - int: The initial count of raw candles.
+        - int: The final count of healed candles.
     """
-    def log(message):
+    def log(message: str):
         if status_callback: status_callback(message)
         else: print(message)
 
@@ -30,38 +78,24 @@ def run_healing(raw_folder_path, status_callback=None):
     initial_count = len(raw_df)
     log(f"-> Initial raw candle count: {initial_count:,}")
 
-    if len(raw_df) < 2:
-        log("!!! Not enough data to determine frequency. Aborting. !!!")
+    # Create a complete time series index
+    master_index = _create_master_index(raw_df, log)
+    if master_index is None:
         return False, None, initial_count, 0
     
+    # Reindex the raw data to the complete timeline, marking original rows
     raw_df['is_original'] = True
-    inferred_freq = raw_df.index.to_series().diff().mode()[0]
-    log(f"-> Inferred base frequency: {inferred_freq}")
-    
-    log(f"-> Creating a complete timeline from {raw_df.index.min()} to {raw_df.index.max()}...")
-    master_index = pd.date_range(start=raw_df.index.min(), end=raw_df.index.max(), freq=inferred_freq, tz='UTC')
-    
     healed_df = raw_df.reindex(master_index)
     del raw_df, master_index
-
     healed_df['is_original'] = healed_df['is_original'].fillna(False).astype(bool)
     
-    log("-> Healing small data gaps (forward-fill)...")
-    price_cols = ['open', 'high', 'low', 'close']
-    healed_df[price_cols] = healed_df[price_cols].ffill()
-    healed_df['volume'] = healed_df['volume'].fillna(0)
-
-    log("-> Removing ARTIFICIAL data from weekend/market-close gaps...")
-    is_artificial = ~healed_df['is_original']
-    is_saturday = healed_df.index.dayofweek == 5
-    is_sunday_before_open = (healed_df.index.dayofweek == 6) & (healed_df.index.hour < 21)
-    is_friday_after_close = (healed_df.index.dayofweek == 4) & (healed_df.index.hour >= 21)
-    rows_to_remove = is_artificial & (is_saturday | is_sunday_before_open | is_friday_after_close)
-    healed_df = healed_df[~rows_to_remove]
+    # Fill gaps and clean data
+    healed_df = _fill_data_gaps(healed_df, log)
+    healed_df = _remove_weekend_data(healed_df, log)
     
+    # Final cleanup
     healed_df.drop(columns=['is_original'], inplace=True)
     healed_df.dropna(inplace=True)
-
     healed_df = healed_df.astype({'open': np.float32, 'high': np.float32, 'low': np.float32, 'close': np.float32, 'volume': np.int32})
     
     final_count = len(healed_df)

@@ -12,6 +12,12 @@ if project_root not in sys.path:
 from Core.strategy_maker import create_strategy_file
 
 class StrategyMakerUI(tk.Toplevel):
+    """
+    The UI window for the Strategy Maker tool. This tool allows users to
+    specify basic parameters (name, timeframe, etc.) and generates a
+    starter Python script for a new strategy, which can then be edited
+    manually.
+    """
     def __init__(self, master=None):
         super().__init__(master)
         self.master_app = master

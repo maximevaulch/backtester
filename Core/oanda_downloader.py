@@ -18,16 +18,27 @@ def get_data_folder_root():
         base_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     return os.path.join(base_path, 'Data')
 
-def get_latest_date_from_files(path):
-    """Finds the most recent date from the filenames in a directory."""
+def get_latest_date_from_files(path: str) -> Optional[pd.Timestamp]:
+    """
+    Finds the most recent date from daily Parquet filenames in a directory.
+
+    Args:
+        path: The directory path containing Parquet files named 'YYYY-MM-DD.parquet'.
+
+    Returns:
+        A pandas Timestamp of the latest date found, or None if no files exist.
+    """
     if not os.path.exists(path): return None
     files = [f for f in os.listdir(path) if f.endswith('.parquet')]
     if not files: return None
     latest_file = sorted(files)[-1]
     return pd.to_datetime(latest_file.split('.')[0], utc=True)
 
-def save_candles_to_daily_files(df, output_path):
-    """Saves candle data into separate daily Parquet files based on UTC date."""
+def save_candles_to_daily_files(df: pd.DataFrame, output_path: str):
+    """
+    Saves candle data into separate daily Parquet files based on UTC date.
+    If a file for a given day already exists, it merges the new data.
+    """
     if df.empty: return
     df['utc_date'] = df.index.date
     os.makedirs(output_path, exist_ok=True)
@@ -46,8 +57,24 @@ def save_candles_to_daily_files(df, output_path):
         else:
             daily_df.to_parquet(full_path, engine='pyarrow')
 
-def fetch_candles(api, instrument, granularity, from_time, count, status_callback=None):
-    """A helper function to make a single API request for candles."""
+def fetch_candles(api: API, instrument: str, granularity: str, from_time: datetime, count: int, status_callback: Optional[callable] = None) -> list:
+    """
+    A helper function to make a single API request for candles.
+
+    Args:
+        api: An initialized oandapyV20 API client.
+        instrument: The instrument to fetch (e.g., 'EUR_USD').
+        granularity: The candle granularity (e.g., 'M1', 'H4').
+        from_time: The start time for the candle request (as a datetime object).
+        count: The number of candles to fetch (max 5000).
+        status_callback: An optional function to log status messages.
+
+    Returns:
+        A list of candle objects from the API response.
+
+    Raises:
+        oandapyV20.exceptions.V20Error: If the API request fails, especially on rate limits.
+    """
     params = {"granularity": granularity, "count": count, "from": from_time.isoformat().replace('+00:00', 'Z'), "price": "M"}
     r = instruments.InstrumentsCandles(instrument=instrument, params=params)
     try:
@@ -65,14 +92,25 @@ def fetch_candles(api, instrument, granularity, from_time, count, status_callbac
         else: print(f"\n{msg}")
         raise
 
-# --- THIS FUNCTION IS NOW MODIFIED ---
-def run_download(instrument, granularity, start_date_str=None, status_callback=None):
-    """Main function to download/update data with robust gap handling."""
-    def log(message):
+def run_download(instrument: str, granularity: str, start_date_str: Optional[str] = None, status_callback: Optional[callable] = None):
+    """
+    Main function to download or update historical price data for an instrument.
+
+    It robustly handles gaps in data and resumes from the last downloaded point.
+    Candles are saved into daily Parquet files.
+
+    Args:
+        instrument: The instrument to download (e.g., 'EUR_USD').
+        granularity: The candle granularity (e.g., 'S30', 'M1').
+        start_date_str: If provided, starts a fresh download from this date ('YYYY-MM-DD').
+                        If None, it attempts to resume from the last downloaded date.
+        status_callback: An optional function for logging progress to a GUI or console.
+    """
+    def log(message: str):
         if status_callback:
             status_callback(message)
         else:
-            # Handle console-specific printing like carriage returns
+            # Handle console-specific printing like carriage returns for progress updates
             if "Fetched until" in message:
                 print(message, end='\r')
             else:
@@ -135,10 +173,20 @@ def run_download(instrument, granularity, start_date_str=None, status_callback=N
     log("\nDownload process finished.")
 
 # ... (analyze_raw_data function is unchanged) ...
-def analyze_raw_data(raw_folder_path):
-    """Performs a comprehensive, granularity-aware analysis of raw data."""
+def analyze_raw_data(raw_folder_path: str) -> str:
+    """
+    Performs a comprehensive, granularity-aware analysis of raw data in a folder.
+
+    Checks for missing data, invalid candles, and time gaps, returning a formatted string report.
+
+    Args:
+        raw_folder_path: The full path to the folder containing raw Parquet files.
+
+    Returns:
+        A formatted string containing the full analysis report.
+    """
     basename = os.path.basename(raw_folder_path)
-    report_lines = [f"Analysis Report for: {basename}\n" + ("-"*40)]
+    report_lines = [f"Analysis Report for: {basename}\n" + ("-" * 40)]
     
     try:
         granularity_str = basename.split('_')[-1] # e.g., 'S30', 'M1'

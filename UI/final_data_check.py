@@ -102,6 +102,11 @@ def get_available_resampled_assets():
     return sorted(available_assets)
 
 class AuditUI(tk.Toplevel):
+    """
+    A UI tool to perform a final audit on a resampled dataset. It compares the
+    number of available candles per day against a theoretical maximum for each
+    timeframe and generates a summary Excel report.
+    """
     def __init__(self, master=None):
         super().__init__(master)
         self.master_app = master

@@ -4,22 +4,22 @@ import pandas as pd
 import numpy as np
 import sys # <-- Import sys
 
-def get_data_folder_root():
+def get_data_folder_root() -> str:
     """
-    Gets the absolute path to the 'Data' directory in the project.
-    This function is smart and works both in development (as a .py script)
-    and in production (as a PyInstaller .exe).
+    Gets the absolute path to the 'Data' directory in the project's root.
+
+    This function is robust and works correctly whether running from a .py script
+    in a development environment or from a bundled executable (e.g., PyInstaller).
+
+    Returns:
+        The absolute path to the 'Data' directory.
     """
-    # --- THIS IS THE NEW, ROBUST LOGIC ---
     if getattr(sys, 'frozen', False):
-        # We are running in a bundle (e.g., PyInstaller .exe)
-        # The base path is the directory of the executable
+        # Running in a bundled executable
         base_path = os.path.dirname(sys.executable)
     else:
-        # We are running in a normal Python environment
-        # The base path is the project root (up two levels from here)
+        # Running in a normal Python environment
         base_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    
     return os.path.join(base_path, 'Data')
 
 def clean_dataframe(df: pd.DataFrame) -> pd.DataFrame:
@@ -64,8 +64,17 @@ def clean_dataframe(df: pd.DataFrame) -> pd.DataFrame:
 
 def load_all_asset_data(dataset_name: str) -> pd.DataFrame:
     """
-    Loads ALL raw Parquet files for a given asset from its raw data folder,
-    cleans, and validates the combined data. Used by the Healer.
+    Loads and concatenates all raw Parquet files for a given asset.
+
+    This function is primarily used by the Data Healer to load the complete
+    raw dataset for an asset before cleaning and validation.
+
+    Args:
+        dataset_name: The name of the folder containing the raw asset data (e.g., 'EUR_USD_M1').
+
+    Returns:
+        A single DataFrame containing all combined raw data, sorted by time.
+        Returns an empty DataFrame if no files are found.
     """
     data_folder_root = get_data_folder_root()
     asset_path = os.path.join(data_folder_root, dataset_name)
@@ -119,20 +128,9 @@ def load_unified_data(asset_name: str) -> pd.DataFrame:
     all_dfs = []
     print(f"-> Found {len(all_files)} timeframe files to unify.")
 
-    # --- Sort files by timeframe duration for consistent merging ---
-    # This ensures the lowest timeframe is the base of our join.
-    def get_sort_key(filename):
-        try:
-            timeframe = filename.split('_')[-1].replace('.parquet', '')
-            # Use a sanitized version for pd.to_timedelta
-            pd_tf = timeframe.upper() if len(timeframe) == 1 else timeframe
-            return pd.to_timedelta(pd_tf)
-        except (ValueError, IndexError):
-            # Return a large delta for files that can't be parsed, pushing them to the end
-            return pd.to_timedelta('100D') 
-            
-    all_files.sort(key=get_sort_key)
-    # --- End of sorting logic ---
+    # Sort files by timeframe to ensure a consistent merge order, with the
+    # lowest timeframe serving as the base for the final join.
+    all_files = _sort_timeframe_files(all_files)
 
     for filename in all_files:
         try:
@@ -159,12 +157,29 @@ def load_unified_data(asset_name: str) -> pd.DataFrame:
     for i in range(1, len(all_dfs)):
         unified_df = unified_df.join(all_dfs[i], how='outer')
 
-    # Forward-fill propagates data from higher TFs down to the base TF rows
+    # Forward-fill propagates data from higher timeframes down to the base timeframe's rows.
+    # For example, the 'open_1h' value will be filled down for all rows until the next 1-hour candle.
     unified_df.ffill(inplace=True)
-    # Drop any rows that still have NaNs (e.g., at the very start of the data)
+
+    # Drop any rows that still have NaNs. This typically only affects the rows
+    # at the very beginning of the dataset before the highest timeframe has data.
     unified_df.dropna(inplace=True)
     
     unified_df.sort_index(inplace=True)
 
     print(f"--- Unified data loaded successfully. Total rows: {len(unified_df):,} ---")
     return unified_df
+
+def _sort_timeframe_files(filenames: list) -> list:
+    """Sorts a list of timeframe filenames (e.g., 'data_1min.parquet') from lowest to highest timeframe."""
+    def get_sort_key(filename):
+        try:
+            # Extracts '1min', '4h', etc., from the filename
+            timeframe_str = filename.split('_')[-1].replace('.parquet', '')
+            # pd.to_timedelta can parse strings like '1H', '30min', '4h'
+            return pd.to_timedelta(timeframe_str)
+        except (ValueError, IndexError):
+            # If parsing fails, return a large value to sort this file last
+            return pd.to_timedelta('365D')
+
+    return sorted(filenames, key=get_sort_key)

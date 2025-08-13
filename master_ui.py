@@ -9,9 +9,15 @@ import traceback
 from dotenv import load_dotenv, find_dotenv
 
 # --- Helper function to find the project root ---
-def get_project_root():
+def get_project_root() -> str:
+    """
+    Gets the project root directory, handling both standard script execution
+    and execution as a bundled executable (e.g., PyInstaller).
+    """
     if getattr(sys, 'frozen', False):
+        # Running in a bundle
         return os.path.dirname(sys.executable)
+    # Running in a normal Python environment
     return os.path.dirname(os.path.abspath(__file__))
 
 # --- Add project root to sys.path for external modules ---
@@ -19,7 +25,14 @@ sys.path.insert(0, get_project_root())
 
 # --- Editor Window for .env file ---
 class EnvEditorUI(tk.Toplevel):
-    def __init__(self, master):
+    """A Toplevel window for editing OANDA API credentials in the .env file."""
+    def __init__(self, master: tk.Tk):
+        """
+        Initializes the EnvEditorUI window.
+
+        Args:
+            master: The parent tkinter window.
+        """
         super().__init__(master)
         self.title("Edit API Credentials")
         self.geometry("400x180")
@@ -57,6 +70,7 @@ class EnvEditorUI(tk.Toplevel):
         self.focus_force()
 
     def load_existing_env(self):
+        """Loads credentials from an existing .env file into the entry fields."""
         load_dotenv(find_dotenv())
         self.token_var.set(os.getenv("OANDA_ACCESS_TOKEN", ""))
         self.account_id_var.set(os.getenv("OANDA_ACCOUNT_ID", ""))
@@ -64,6 +78,7 @@ class EnvEditorUI(tk.Toplevel):
         self.env_var.set("Live" if env.lower() == 'live' else "Practice")
 
     def save_env(self):
+        """Saves the entered credentials to the .env file in the project root."""
         token = self.token_var.get().strip()
         account_id = self.account_id_var.get().strip()
         environment = 'live' if self.env_var.get() == "Live" else 'practice'
@@ -86,7 +101,9 @@ class EnvEditorUI(tk.Toplevel):
 
 # --- Main Application Window ---
 class MasterUI(tk.Tk):
+    """The main application window that serves as the central control panel."""
     def __init__(self):
+        """Initializes the MasterUI application window and its widgets."""
         super().__init__()
         self.title("Master Control Panel")
         self.geometry("550x340")
@@ -121,10 +138,21 @@ class MasterUI(tk.Tk):
         edit_env_label.bind("<Button-1>", self.open_env_editor)
 
     def open_env_editor(self, event=None):
+        """Opens the .env file editor window."""
         editor = EnvEditorUI(master=self)
         editor.wait_window()
 
-    def launch_app(self, module_name, class_name):
+    def launch_app(self, module_name: str, class_name: str):
+        """
+        A generic function to launch a UI component from a module.
+
+        It hides the master window, dynamically imports the specified module from the UI
+        package, instantiates the class, and shows an error if it fails.
+
+        Args:
+            module_name: The name of the module file (e.g., 'downloader_ui').
+            class_name: The name of the class to instantiate (e.g., 'DownloaderUI').
+        """
         self.withdraw()
         try:
             full_module_name = f"UI.{module_name}"

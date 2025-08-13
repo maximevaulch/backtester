@@ -33,6 +33,11 @@ def get_available_healed_assets():
     return sorted(list(available_assets))
 
 class ResamplerUI(tk.Toplevel):
+    """
+    The UI window for the Data Resampler tool. This tool takes a single 'healed'
+    data file for an asset and generates multiple new Parquet files, one for each
+    target timeframe (e.g., 1min, 5min, 1H), in a new '_resampled' folder.
+    """
     def __init__(self, master=None):
         super().__init__(master)
         self.master_app = master

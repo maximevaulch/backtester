@@ -9,7 +9,10 @@ from datetime import time
 import sys
 import threading
 import traceback
+import inspect
 import Strategies
+
+from Core.strategy_base import BaseStrategy
 
 # --- THIS IS THE FIX ---
 def get_project_root():
@@ -27,7 +30,8 @@ if project_root not in sys.path:
 from Core.main import run_full_backtest
 from Core.visualizer import open_file
 
-def get_available_assets():
+def get_available_assets() -> List[str]:
+    """Scans the Data directory to find available assets for testing."""
     data_path = os.path.join(project_root, 'Data')
     assets = []
     if os.path.exists(data_path):
@@ -37,7 +41,9 @@ def get_available_assets():
     return sorted(assets)
 
 class BacktesterUI(tk.Toplevel):
-    def __init__(self, master=None):
+    """The main UI window for configuring and running backtests."""
+    def __init__(self, master: Optional[tk.Tk] = None):
+        """Initializes the BacktesterUI window and its components."""
         super().__init__(master)
         self.master_app = master
         self.protocol("WM_DELETE_WINDOW", self.on_closing)
@@ -126,36 +132,62 @@ class BacktesterUI(tk.Toplevel):
         self.destroy()
         if hasattr(self, 'master_app') and self.master_app: self.master_app.deiconify()
 
-    def on_strategy_select(self, event=None):
+    def get_strategy_instance(self, module_path: str) -> Optional[BaseStrategy]:
+        """
+        Dynamically loads a strategy module and returns an instance of the strategy class.
+
+        Args:
+            module_path: The full module path of the strategy (e.g., 'Strategies.strategy_PR').
+
+        Returns:
+            An instance of the BaseStrategy subclass found in the module, or None if not found.
+        """
+        if not module_path:
+            return None
+        try:
+            module = importlib.import_module(module_path)
+            importlib.reload(module)  # Reload to get the latest changes during development
+            for name, obj in inspect.getmembers(module):
+                if inspect.isclass(obj) and issubclass(obj, BaseStrategy) and obj is not BaseStrategy:
+                    return obj()  # Instantiate the class
+        except (ImportError, AttributeError) as e:
+            print(f"Could not get strategy instance from {module_path}: {e}")
+        return None
+
+    def on_strategy_select(self, event: Optional[tk.Event] = None):
+        """
+        Handles the event when a new strategy is selected from the dropdown.
+        It dynamically updates the UI to show the relevant filters and session options.
+        """
         for widget in self.session_options_frame.winfo_children(): widget.grid_forget()
         for widget in self.conditions_frame.winfo_children(): widget.grid_forget()
         self.filter_vars.clear()
-        selected_strategy_path = self.strategy_var.get()
-        if not selected_strategy_path: return
-        try:
-            module = importlib.import_module(selected_strategy_path)
-            session_type = getattr(module, 'SESSION_TYPE', 'fixed')
-            if session_type == 'optional':
-                self.session_start_label.grid(row=0, column=0, padx=5, pady=2, sticky='w')
-                self.session_start_dropdown.grid(row=0, column=1, padx=5, pady=2, sticky='w')
-                self.session_end_label.grid(row=1, column=0, padx=5, pady=2, sticky='w')
-                self.session_end_dropdown.grid(row=1, column=1, padx=5, pady=2, sticky='w')
-            available_filters = getattr(module, 'AVAILABLE_FILTERS', [])
-            if available_filters:
-                for i, filter_name in enumerate(available_filters):
-                    var = tk.BooleanVar()
-                    chk = ttk.Checkbutton(self.conditions_frame, text=f"Use {filter_name} Condition", variable=var)
-                    chk.grid(row=i, column=0, padx=5, pady=2, sticky='w')
-                    self.filter_vars[filter_name] = var
-        except (ImportError, AttributeError) as e:
-            print(f"Could not load strategy options for {selected_strategy_path}: {e}")
+
+        strategy_instance = self.get_strategy_instance(self.strategy_var.get())
+        if not strategy_instance:
+            return
+
+        if strategy_instance.SESSION_TYPE == 'optional':
+            self.session_start_label.grid(row=0, column=0, padx=5, pady=2, sticky='w')
+            self.session_start_dropdown.grid(row=0, column=1, padx=5, pady=2, sticky='w')
+            self.session_end_label.grid(row=1, column=0, padx=5, pady=2, sticky='w')
+            self.session_end_dropdown.grid(row=1, column=1, padx=5, pady=2, sticky='w')
+
+        if strategy_instance.AVAILABLE_FILTERS:
+            for i, filter_name in enumerate(strategy_instance.AVAILABLE_FILTERS):
+                var = tk.BooleanVar()
+                chk = ttk.Checkbutton(self.conditions_frame, text=f"Use {filter_name} Condition", variable=var)
+                chk.grid(row=i, column=0, padx=5, pady=2, sticky='w')
+                self.filter_vars[filter_name] = var
 
     def populate_assets(self):
+        """Populates the asset dropdown with available resampled asset data."""
         assets = get_available_assets()
         self.asset_dropdown['values'] = assets
         if assets: self.asset_dropdown.current(0)
 
     def populate_strategies(self):
+        """Discovers and populates the strategy dropdown with all valid strategy modules."""
         strats = []
         for importer, modname, ispkg in pkgutil.walk_packages(path=Strategies.__path__, prefix=Strategies.__name__ + '.', onerror=lambda x: None):
             if modname.split('.')[-1].startswith('strategy_'):
@@ -164,11 +196,11 @@ class BacktesterUI(tk.Toplevel):
         if strats and not self.strategy_var.get(): self.strategy_dropdown.current(0)
 
     def backtest_logic(self, *args):
-        asset_name, start_date, end_date, scenarios, strategy_module, strategy_params, selected_filters, allow_multiple_trades, log_callback = args
+        asset_name, start_date, end_date, scenarios, strategy_instance, strategy_params, selected_filters, allow_multiple_trades, log_callback = args
         try:
             report_path = run_full_backtest(
-                asset_name, start_date, end_date, scenarios, 
-                strategy_module=strategy_module, 
+                asset_name, start_date, end_date, scenarios,
+                strategy_instance=strategy_instance,
                 strategy_params=strategy_params,
                 selected_filters=selected_filters,
                 allow_multiple_trades=allow_multiple_trades,
@@ -189,6 +221,10 @@ class BacktesterUI(tk.Toplevel):
             open_file(report_path)
 
     def start_backtest_thread(self):
+        """
+        Validates user inputs, gathers all parameters, and starts the backtest
+        process in a separate thread to keep the UI responsive.
+        """
         try:
             asset_name = self.asset_var.get()
             strategy_path = self.strategy_var.get()
@@ -196,16 +232,21 @@ class BacktesterUI(tk.Toplevel):
             
             start_date = self.start_date_entry.get_date().strftime('%Y-%m-%d')
             end_date = self.end_date_entry.get_date().strftime('%Y-%m-%d')
-            module = importlib.import_module(strategy_path)
+
+            strategy_instance = self.get_strategy_instance(strategy_path)
+            if not strategy_instance:
+                raise ValueError(f"Could not load strategy from {strategy_path}")
+
             selected_filters = [name for name, var in self.filter_vars.items() if var.get()]
             strategy_params = {}
-            if getattr(module, 'SESSION_TYPE', 'fixed') == 'optional':
+            if strategy_instance.SESSION_TYPE == 'optional':
                 start_str, end_str = self.session_start_dropdown.get(), self.session_end_dropdown.get()
                 if start_str and end_str:
                     time.fromisoformat(start_str); time.fromisoformat(end_str)
                     strategy_params['session_start_str'] = start_str
                     strategy_params['session_end_str'] = end_str
                 elif start_str or end_str: raise ValueError("Both session start and end times must be provided.")
+
             scenarios = []
             for entry in self.scenario_entries:
                 rr_str = entry['rr'].get()
@@ -221,7 +262,7 @@ class BacktesterUI(tk.Toplevel):
         
         log_callback = lambda msg: self.update_log(msg)
         allow_multiple_trades = self.multi_trade_var.get()
-        args = (asset_name, start_date, end_date, scenarios, module, strategy_params, selected_filters, allow_multiple_trades, log_callback)
+        args = (asset_name, start_date, end_date, scenarios, strategy_instance, strategy_params, selected_filters, allow_multiple_trades, log_callback)
         
         self.backtest_thread = threading.Thread(target=self.backtest_logic, args=args, daemon=True)
         self.backtest_thread.start()

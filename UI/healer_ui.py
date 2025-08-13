@@ -34,6 +34,11 @@ def get_available_raw_assets():
     return sorted(list(available_assets))
 
 class HealerUI(tk.Toplevel):
+    """
+    The UI window for the Data Healer tool. This tool is responsible for
+    taking raw, downloaded data for an asset, filling in any time gaps,
+    and producing a single, continuous 'healed' data file.
+    """
     def __init__(self, master=None):
         super().__init__(master)
         self.master_app = master
