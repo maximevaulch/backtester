@@ -6,6 +6,8 @@ venv/
 # Ignore folders
 Data/
 Results/
+dist/
+build/
 
 # Ignore Python cache files
 __pycache__/
@@ -14,3 +16,6 @@ __pycache__/
 # --- IMPORTANT ---
 # Ignore the environment file containing secrets
 .env
+
+# Ignore .specs files
+*.spec
