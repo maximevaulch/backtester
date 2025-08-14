@@ -6,6 +6,7 @@ import sys
 from typing import Optional
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
+from typing import List, Optional
 
 def get_unique_filename(path: str) -> str:
     """

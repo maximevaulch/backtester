@@ -10,6 +10,8 @@ from dotenv import load_dotenv
 import re
 import sys
 
+from typing import List, Optional
+
 def get_data_folder_root():
     """Gets the absolute path to the 'Data' directory."""
     if getattr(sys, 'frozen', False):

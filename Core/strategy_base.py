@@ -3,6 +3,8 @@ from abc import ABC, abstractmethod
 import pandas as pd
 from typing import List, Dict, Any
 
+
+
 class BaseStrategy(ABC):
     """
     Abstract base class for all trading strategies.

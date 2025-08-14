@@ -12,9 +12,10 @@ import traceback
 import inspect
 import Strategies
 
-from Core.strategy_base import BaseStrategy
 
-# --- THIS IS THE FIX ---
+from Core.strategy_base import BaseStrategy
+from typing import List, Optional
+
 def get_project_root():
     """Gets the project root, handling both script and frozen exe."""
     if getattr(sys, 'frozen', False):
@@ -22,10 +23,6 @@ def get_project_root():
     return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 project_root = get_project_root()
-# --- END OF FIX ---
-
-if project_root not in sys.path:
-    sys.path.insert(0, project_root)
 
 from Core.main import run_full_backtest
 from Core.visualizer import open_file

@@ -12,6 +12,8 @@ import traceback
 import pkgutil
 import Strategies
 
+from typing import List, Optional
+
 # --- THIS IS THE FIX ---
 def get_project_root():
     """Gets the project root, handling both script and frozen exe."""
